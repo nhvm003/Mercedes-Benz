@@ -1,0 +1,303 @@
+﻿'use strict';
+app.controller('loginController', ['$scope', '$window', '$location', '$timeout', 'authService', 'localStorageService', 'ngAuthSettings', function ($scope, $window, $location, $timeout, authService, localStorageService, ngAuthSettings) {
+
+    $scope.loginData = {
+        email: "",
+        password: "",
+        useRefreshTokens: false
+    };
+
+    $scope.savedSuccessfully = false;
+    $scope.message = "";
+
+    $scope.registration = {
+        email: "",
+        displayName: "",
+        password: "",
+        confirmPassword: ""
+    };
+
+    $scope.policy = function () {
+        var obj = {
+            success: true,
+            type: "policy",
+            redirect_url: "https://thanhnien.vn/stories/chinh-sach-bao-mat"
+        };
+        postMess(obj);
+    };
+    $scope.forgotPass = function () {
+        var obj = {
+            success: true,
+            type: "forgotPass",
+            redirect_url: "https://my.thanhnien.vn/app/forgotPass"
+        };
+        postMess(obj);
+    };
+
+    $scope.signUp = function () {
+
+        if (null === $scope.registration.email || '' === $scope.registration.email) {
+            toast({
+                title: "Thông báo!",
+                message: "Vui lòng nhập email",
+                type: "error",
+                duration: 2000
+            });
+            return;
+        }
+
+        if (!validEmail($scope.registration.email)) {
+            toast({
+                title: "Thông báo!",
+                message: "Vui lòng nhập đúng định dạng email",
+                type: "error",
+                duration: 2000
+            });
+            return;
+        }
+
+        if (null === $scope.registration.displayName || '' === $scope.registration.displayName) {
+            toast({
+                title: "Thông báo!",
+                message: "Vui lòng nhập tên hiển thị",
+                type: "error",
+                duration: 2000
+            });
+            return;
+        }
+
+        if (null === $scope.registration.password || '' === $scope.registration.password
+            || null === $scope.registration.confirmPassword || '' === $scope.registration.confirmPassword) {
+            toast({
+                title: "Thông báo!",
+                message: "Vui lòng nhập mật khẩu và xác nhận mật khẩu",
+                type: "error",
+                duration: 2000
+            });
+            return;
+        }
+
+        eraseCookie('my_tnoid');
+        eraseCookie('my_tnosso');
+
+        authService.saveRegistration($scope.registration).then(function (response) {
+            if (response.data.success) {
+                $scope.savedSuccessfully = true;
+                toast({
+                    title: "Thành công!",
+                    message: "Bạn đã đăng ký thành công tài khoản.",
+                    type: "info",
+                    duration: 2000
+                });
+                var redirectUri = getQueryParam("redirect_url");
+                var obj = {
+                    success: true,
+                    type: "register",
+                    redirect_url: undefined !== redirectUri ? redirectUri : "https://my.thanhnien.vn/app.html",
+                    data: { "userId": response.refId, "avatar": null === response.avatar ? "" : response.avatar, "displayName": response.displayName, "access_token": response.data.access_token }
+                };
+                postMess(obj);
+                // $scope.message = "Tài khoản đã đăng ký thành công, chuyển hướng trong 1 giây.";
+                // startTimer();
+            }
+            else {
+                toast({
+                    title: "Lỗi!",
+                    message: response.data.message,
+                    type: "error",
+                    duration: 2000
+                });
+                // $scope.message = response.message;
+            }
+        },
+            function (response) {
+                var errors = [];
+                for (var key in response.data.modelState) {
+                    for (var i = 0; i < response.data.modelState[key].length; i++) {
+                        errors.push(response.data.modelState[key][i]);
+                    }
+                }
+                toast({
+                    title: "Lỗi!",
+                    message: "Lỗi đăng ký tài khoản.",
+                    type: "error",
+                    duration: 2000
+                });
+                // $scope.message = "Lỗi đăng ký tài khoản:" + errors.join(' ');
+                console.log("Lỗi đăng ký tài khoản: " + errors.join(' '));
+            });
+    };
+
+    $scope.login = function () {
+
+        eraseCookie('my_tnoid');
+        eraseCookie('my_tnosso');
+
+        authService.commonLogin($scope.loginData).then(function (response) {
+            if (response.success) {
+                toast({
+                    title: "Thành công!",
+                    message: "Bạn đã đăng nhập thành công.",
+                    type: "info",
+                    duration: 2000
+                });
+
+                var redirectUri = getQueryParam("redirect_url");
+                var obj = {
+                    success: true,
+                    type: "login",
+                    redirect_url: undefined !== redirectUri ? redirectUri : "https://my.thanhnien.vn/app.html",
+                    data: { "userId": response.refId, "avatar": null === response.avatar ? "" : response.avatar, "displayName": response.displayName, "access_token": response.data.access_token }
+                };
+                postMess(obj);
+                //startTimer();
+            }
+            else {
+                toast({
+                    title: "Lỗi!",
+                    message: "Lỗi đăng nhập.",
+                    type: "error",
+                    duration: 2000
+                });
+                console.log(response.message);
+                // $scope.message = response.message;
+            }
+        },
+            function (err) {
+                toast({
+                    title: "Lỗi!",
+                    message: err.error_description,
+                    type: "error",
+                    duration: 2000
+                });
+                console.log(err.error_description);
+            });
+    };
+
+    $scope.authExternalProvider = function (provider) {
+
+        eraseCookie('my_tnoid');
+        eraseCookie('my_tnosso');
+
+        var redirectUri = location.protocol + '//' + location.host + '/authcomplete.htm';
+
+        var externalProviderUrl = ngAuthSettings.apiServiceBaseUri + "api/Account/ExternalLogin?provider=" + provider
+            + "&response_type=token&client_id=" + ngAuthSettings.clientId
+            + "&redirect_uri=" + redirectUri;
+
+        if (isWebview()) {
+            localStorageService.set('redirect_url', (window.location != window.parent.location)
+                ? document.referrer
+                : document.location.href);
+        }
+
+        window.$windowScope = $scope;
+        var oauthWindow = window.open(externalProviderUrl, "Authenticate Account", "location=0,status=0,width=600,height=750");
+    };
+
+    $scope.authCompletedCB = function (fragment) {
+
+        $scope.$apply(function () {
+
+            if (fragment.haslocalaccount === 'False') {
+
+                authService.logOut();
+
+                authService.externalAuthData = {
+                    provider: fragment.provider,
+                    userName: fragment.external_user_name,
+                    externalAccessToken: fragment.external_access_token
+                };
+
+                authService.registerExternal(authService.externalAuthData).then(function (response) {
+                    $scope.savedSuccessfully = true;
+                    toast({
+                        title: "Thành công!",
+                        message: "Bạn đã đăng ký thành công tài khoản.",
+                        type: "info",
+                        duration: 2000
+                    });
+
+                    var redirectUri = getQueryParam("redirect_url");
+                    var obj = {
+                        success: true,
+                        type: "externalRegister",
+                        redirect_url: undefined !== redirectUri ? redirectUri : "https://my.thanhnien.vn/app.html",
+                        data: { "userId": response.refId, "avatar": null === response.avatar ? "" : response.avatar, "displayName": response.displayName, "access_token": response.data.access_token }
+                    };
+                    postMess(obj);
+                    //startTimer();
+                },
+                    function (response) {
+                        var errors = [];
+                        for (var key in response.modelState) {
+                            errors.push(response.modelState[key]);
+                        }
+                        toast({
+                            title: "Lỗi!",
+                            message: "Lỗi đăng ký tài khoản.",
+                            type: "error",
+                            duration: 2000
+                        });
+                        // $scope.message = "Lỗi đăng ký tài khoản:" + errors.join(' ');
+                        console.log("Lỗi đăng ký tài khoản: " + errors.join(' '));
+                    });
+
+                //$location.path('/associate');
+
+            }
+            else {
+                //Obtain access token and redirect to orders
+                var externalData = { provider: fragment.provider, externalAccessToken: fragment.external_access_token };
+                authService.obtainAccessToken(externalData).then(function (response) {
+                    if (response.success) {
+                        toast({
+                            title: "Thành công!",
+                            message: "Bạn đã đăng nhập thành công.",
+                            type: "info",
+                            duration: 2000
+                        });
+                        /* post parent*/
+                        var redirectUri = getQueryParam("redirect_url");
+                        var obj = {
+                            success: true,
+                            type: "externalLogin",
+                            redirect_url: undefined !== redirectUri ? redirectUri : "https://my.thanhnien.vn/app.html",
+                            data: { "userId": response.refId, "avatar": null === response.avatar ? "" : response.avatar, "displayName": response.displayName, "access_token": response.data.access_token }
+                        };
+                        postMess(obj);
+                        //startTimer();
+                    }
+
+                },
+                    function (err) {
+                        toast({
+                            title: "Lỗi!",
+                            message: "Lỗi đăng ký tài khoản.",
+                            type: "error",
+                            duration: 2000
+                        });
+                        console.log("Lỗi đăng ký tài khoản: " + err.error_description);
+                        //$scope.message = err.error_description;
+                    });
+            }
+
+        });
+    };
+
+    var startTimer = function () {
+        var timer = $timeout(function () {
+            $timeout.cancel(timer);
+            var redirectUri = getQueryParam("redirect_url");
+            if (undefined !== redirectUri) $window.location.href = decodeURI(redirectUri);
+            else $window.location.href = '/app.html';
+        }, 1000);
+    };
+
+    var startRegTimer = function () {
+        var regTimer = $timeout(function () {
+            $timeout.cancel(regTimer);
+            $("#menu_1").trigger('click');
+        }, 1000);
+    };
+}]);
